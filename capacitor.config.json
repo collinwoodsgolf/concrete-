@@ -1,0 +1,12 @@
+{
+  "appId": "com.pourdecisions.game",
+  "appName": "Pour Decisions",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "automatic",
+    "backgroundColor": "#15181d"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

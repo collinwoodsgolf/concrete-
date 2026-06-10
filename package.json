@@ -1,0 +1,19 @@
+{
+  "name": "pour-decisions",
+  "version": "1.0.0",
+  "description": "Pour Decisions — a concrete business story game (web + iOS via Capacitor)",
+  "private": true,
+  "scripts": {
+    "start": "npx http-server -p 8080 -c-1 .",
+    "build:www": "node scripts/build-www.mjs",
+    "ios:add": "npm run build:www && npx cap add ios",
+    "ios:sync": "npm run build:www && npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.0",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/ios": "^6.1.0",
+    "jsdom": "^29.1.1"
+  }
+}
