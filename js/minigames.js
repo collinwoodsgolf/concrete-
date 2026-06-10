@@ -109,14 +109,18 @@ function startFormsGame(job, done) {
 
   function fmt(v) {
     const sign = v < 0 ? '-' : v > 0 ? '+' : '';
-    const a = Math.abs(v); const whole = Math.floor(a); const e = Math.round((a - whole) * 8);
-    return `${sign}${whole && e ? whole + ' ' : whole ? whole : ''}${e ? e + '/8' : whole ? '' : '0'}″`;
+    const a = Math.abs(v); const whole = Math.floor(a);
+    let num = Math.round((a - whole) * 8), den = 8;
+    while (num && num % 2 === 0) { num /= 2; den /= 2; }
+    return `${sign}${whole && num ? whole + ' ' : whole ? whole : ''}${num ? num + '/' + den : whole ? '' : '0'}″`;
   }
 
   function svgProfile() {
     const W = 640, H = 170, pad = 36;
     const x = i => pad + i * (W - 2 * pad) / (n - 1);
-    const y = v => 50 + (-v) * 16;
+    const drop = Math.abs(targets[n - 1]) + 1.5;        // worst-case inches to show
+    const scale = Math.min(16, (H - 60) / drop);        // px per inch, fits long runs
+    const y = v => 50 + (-v) * scale;
     const cur = els.map((v, i) => `${x(i)},${y(v)}`).join(' ');
     const ideal = targets.map((v, i) => `${x(i)},${y(v)}`).join(' ');
     return `<svg viewBox="0 0 ${W} ${H}" class="forms-svg">

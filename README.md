@@ -23,6 +23,18 @@ real concrete knowledge, and cause-and-effect failures: skip air entrainment
 outside and the slab scales after winter; hard-trowel a 6%-air mix and it
 delaminates. Dale told you. He TOLD you.
 
+## 📸 Screenshots
+
+| | |
+|---|---|
+| ![Title](docs/screens/01-title.png) | ![Order](docs/screens/08-order.png) |
+| ![Forms](docs/screens/07-forms.png) | ![Finishing](docs/screens/10-finish.png) |
+| ![Joints](docs/screens/11-joints.png) | ![Results](docs/screens/12-results.png) |
+
+More in [`docs/screens/`](docs/screens/) — regenerate with
+`node test/screenshots.mjs` (needs `webkit2gtk-driver` + `xvfb`, see the
+script header).
+
 ## ▶️ Play (web)
 
 It's a zero-dependency static site:
