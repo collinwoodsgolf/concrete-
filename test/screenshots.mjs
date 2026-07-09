@@ -89,8 +89,8 @@ await exec(`
 await pause(400);
 await exec(`for (let i = 0; i < 22; i++) window.__demoHit(i);
             for (let i = 0; i < 12; i++) window.__demoHit(i);`);
-await exec(`const R = slabRect(G.currentJob); Stage.onClick(R.x + R.w*0.62, R.y + R.h*0.55);`);
-await pause(2200);   // let him walk over and start swinging
+await exec(`const s = window.__site; if (s) s.movePlayer(new THREE.Vector3(6, 0, 2), () => s.playerPose('jack'));`);
+await pause(2600);   // let him walk over and start swinging
 await shot('06-demo');
 
 // 7. forms & flow lines
@@ -122,8 +122,8 @@ await exec(`
 `);
 await pause(600);
 await exec(`for (let k = 0; k < 6; k++) window.__pourCell(0);`);
-await exec(`const R = slabRect(G.currentJob); Stage.onClick(R.x + R.w*0.5, R.y + R.h*0.6);`);
-await pause(1500);
+await exec(`const s = window.__site; if (s) s.movePlayer(new THREE.Vector3(-2, 0, 3), () => s.playerPose('screed'));`);
+await pause(1800);
 await shot('09-pour');
 // wait for the rain to arrive, keep pouring meanwhile
 for (let i = 0; i < 100; i++) {

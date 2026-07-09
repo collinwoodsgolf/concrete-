@@ -141,19 +141,12 @@ function showHub(tab) {
       <div id="tab-body"></div>
     </div>`;
 
-  // the living town map
+  // the living town (full 3D)
   const st = townState();
-  Stage.mount(document.getElementById('town'), TOWN.W, TOWN.H);
-  Stage.draw = (ctx, t) => drawTown(ctx, t, st);
-  Stage.onClick = (x, y) => {
-    for (const m of st.markers) {
-      const p = lotMarkerPos(LOTS[m.lot]);
-      if (Math.hypot(x - p.x, y - p.y) < 26) {
-        if (m.story) return startStoryJob();
-        if (m.job) return startBid(m.job);
-      }
-    }
-  };
+  TownView.mount(document.getElementById('town'), st.markers, m => {
+    if (m.story) return startStoryJob();
+    if (m.job) return startBid(m.job);
+  });
 
   document.getElementById('lead-call').onclick = () => {
     advanceDays(1);
@@ -426,9 +419,8 @@ function showDriveOut() {
     </div>`;
   const st = townState();
   st.markers = st.markers.filter(m => m.lot !== job.lot);   // that marker is now YOUR job
-  Stage.mount(document.getElementById('town'), TOWN.W, TOWN.H);
-  Stage.draw = (ctx, t) => drawTown(ctx, t, st);
-  driveTruckTo(st, job.lot ?? 6, () => startJobPipeline());
+  TownView.mount(document.getElementById('town'), st.markers, () => {});
+  TownView.driveTo(job.lot ?? 6, () => startJobPipeline());
 }
 
 // ---------- the job pipeline -------------------------------------------------------

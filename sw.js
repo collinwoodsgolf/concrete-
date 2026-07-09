@@ -1,11 +1,13 @@
 // Pour Decisions — offline-first service worker
-const CACHE = 'pour-decisions-v1';
+const CACHE = 'pour-decisions-v2';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css',
+  './lib/three.min.js',
   './js/data.js',
+  './js/world3d.js',
   './js/minigames.js',
   './js/game.js',
   './icons/icon-192.png',

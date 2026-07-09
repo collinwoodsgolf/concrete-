@@ -8,7 +8,7 @@ const www = join(root, 'www');
 
 rmSync(www, { recursive: true, force: true });
 mkdirSync(www);
-for (const item of ['index.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons']) {
+for (const item of ['index.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'lib', 'icons']) {
   cpSync(join(root, item), join(www, item), { recursive: true });
 }
 console.log('Staged web assets into www/');

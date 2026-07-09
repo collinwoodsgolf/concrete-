@@ -17,24 +17,28 @@ Every phase of a real flatwork job is in the game:
 | ✂️ **Control joints** | Tool or saw-cut joints — 2.5× thickness rule, panels near square |
 | 🪄 **Finish** | Bull float, respect the bleed water, edge, broom or power-trowel in the timing windows |
 
-And it plays out in a **gritty top-down world** — GTA-style bird's-eye camera,
-everything procedurally drawn (noise-textured asphalt, grass, and concrete;
-sun-cast shadows; 2.5D building facades; color grading and vignette). No image
-assets anywhere.
+And it plays out in **real-time 3D** (three.js/WebGL): a perspective camera
+over a modeled world with a sun that casts soft shadows, sky and distance fog,
+procedural PBR textures (grass, asphalt, aged/wet concrete, gravel), ACES tone
+mapping, drifting clouds, and weather. Every model — houses, the mixer truck,
+the skid steer, people, the dog — is built from geometry in code. No asset
+files.
 
-- 🗺️ **Town map** — Cedar Falls from above: cracked asphalt with wear tracks
-  and a crosswalk, curbs and jointed sidewalks, shingled roofs with extruded
-  house fronts, parked cars, your shop with the CONCRETE roof sign, City Hall
-  with columns and a dome. Leads appear as `$` markers on real houses; the
-  story job is the `★`. Win a bid and your truck drives across town.
+- 🗺️ **Town** — a 3D neighborhood: gabled houses with glass windows and
+  chimneys, driveways, parked cars, trees, your steel shop building with a
+  CONCRETE sign, and a domed, columned City Hall. Leads float as `$` pins over
+  real houses; the story job is the `★`. Win a bid and your pickup drives
+  across town to the lot.
 - 🚶 **You're the foreman** — on the job site, click where you want to work
-  and your guy (white hard hat, lime vest) walks over and does it: swings the
-  breaker chunk by chunk during demo, places and screeds mud on pour day,
-  steps onto the slab for every finishing pass.
-- 🏘️ **Animated job sites** — the old slab cracks and turns to rubble, the
-  mixer's drum spins while the chute follows the pour front, bleed water
-  sheens across the setting surface, broom lines / trowel swirls / saw cuts
-  appear as you work. The customer watches from the porch.
+  and your guy (white hard hat, lime vest) walks over in 3D and does it:
+  swings the breaker chunk by chunk during demo, places and screeds mud on
+  pour day, steps onto the slab for every finishing pass.
+- 🏘️ **Living job sites** — the old slab breaks into 3D rubble piles, the
+  mixer backs up to the forms with its striped drum turning and mud streaming
+  down the chute, the wet slab literally cures (gloss fades as it sets, bleed
+  water sheens on the surface), and edger lines, saw cuts, broom texture and
+  trowel swirls appear on the concrete as you work. The customer supervises
+  from the front walk.
 - 👷 **Crew with morale & levels** — hire up to 3 workers, each with a trait
   that changes gameplay (Fast Hands, Screed Wizard, Old Pro, Steady Eye).
   They gain XP and level up (and negotiate raises), and their morale rises
@@ -115,11 +119,13 @@ mix order, pour, joints, finishing, and the results screen.
 ```
 index.html            game shell (PWA meta, script loading)
 css/style.css         all styling
+lib/three.min.js      vendored three.js (r147, works offline / in the iOS shell)
 js/data.js            equipment, mix pricing, story chapters, Crete-o-pedia
+js/world3d.js         3D engine: renderer, materials, models, town + site scenes
 js/minigames.js       demo / forms / pour / joints / finishing minigames
 js/game.js            state, hub, bidding, ordering, scoring, story flow
 icons/                generated PNG icons (scripts/gen_icons.py)
 ios/                  Capacitor Xcode project
 scripts/build-www.mjs stages web assets into www/ for Capacitor
-test/smoke.mjs        end-to-end smoke test (jsdom)
+test/smoke.mjs        end-to-end smoke test (jsdom, logic-only — no WebGL needed)
 ```
