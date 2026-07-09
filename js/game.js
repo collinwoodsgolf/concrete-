@@ -15,19 +15,28 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const money = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const owns = id => !!(G && G.equipment[id]);
+const crewHas = trait => !!(G && (G.crew || []).some(c => c.trait === trait));
+const crewWages = () => (G && G.crew || []).reduce((a, c) => a + c.wage, 0);
+
+const OVERHEAD_PER_DAY = 45;   // truck payment, insurance, phone, coffee
 
 function newState(company) {
   return {
     company, cash: 5000, rep: 0, day: 1, chapter: 1,
-    equipment: {}, leads: [], jobsDone: 0, storyDone: {}, seenIntro: {},
-    log: [],
+    equipment: {}, leads: [], crew: [], applicants: [],
+    jobsDone: 0, storyDone: {}, seenIntro: {},
   };
 }
 
 function save() { try { localStorage.setItem('pourDecisionsSave', JSON.stringify(G)); } catch (e) {} }
 function load() {
-  try { const s = localStorage.getItem('pourDecisionsSave'); return s ? JSON.parse(s) : null; }
-  catch (e) { return null; }
+  try {
+    const s = localStorage.getItem('pourDecisionsSave');
+    if (!s) return null;
+    const g = JSON.parse(s);
+    g.crew = g.crew || []; g.applicants = g.applicants || [];   // migrate older saves
+    return g;
+  } catch (e) { return null; }
 }
 
 function chapterDef() { return CHAPTERS[Math.min(G.chapter, CHAPTERS.length) - 1]; }
@@ -40,6 +49,11 @@ function rollWeather(cold) {
   return { temp, desc: temp <= 40 ? '🥶 bitter' : temp <= 55 ? '🍂 chilly' : temp <= 75 ? '⛅ decent' : '🥵 hot' };
 }
 
+function advanceDays(n) {
+  G.day += n;
+  G.cash -= OVERHEAD_PER_DAY * n;
+}
+
 function renderHUD() {
   if (!G) { hud.innerHTML = ''; return; }
   hud.innerHTML = `
@@ -47,6 +61,7 @@ function renderHUD() {
     <span>💰 <b class="${G.cash < 0 ? 'bad' : ''}">${money(G.cash)}</b></span>
     <span>⭐ Rep <b>${G.rep}</b></span>
     <span>📅 Day ${G.day}</span>
+    <span>👷 Crew <b>${(G.crew || []).length}</b></span>
     <span>📖 ${esc(chapterDef().title)}</span>`;
 }
 
@@ -66,7 +81,7 @@ function daleTip(phase, cb) {
 // ---------- title / new game --------------------------------------------------
 
 function showTitle() {
-  G = null; renderHUD();
+  G = null; renderHUD(); Stage.unmount();
   const hasSave = !!load();
   app.innerHTML = `
     <div class="panel title-panel">
@@ -98,7 +113,7 @@ function showNewGame() {
   };
 }
 
-// ---------- hub ----------------------------------------------------------------
+// ---------- hub: the town ------------------------------------------------------
 
 function showHub(tab) {
   renderHUD(); save();
@@ -109,23 +124,63 @@ function showHub(tab) {
   tab = tab || 'story';
   app.innerHTML = `
     <div class="panel">
+      <div class="town-bar">
+        <span class="muted small">🗺️ Cedar Falls — ${season().name}, day ${G.day}. <b>$</b> markers are jobs to bid; <b>★</b> is the story job.</span>
+        <button class="btn" id="lead-call">📞 Answer the Phone <span class="small muted">(1 day, -${money(OVERHEAD_PER_DAY)})</span></button>
+      </div>
+      <div id="town" class="site-wrap"></div>
       <div class="tabs">
         <button class="tab ${tab==='story'?'on':''}" data-t="story">📖 Story</button>
-        <button class="tab ${tab==='leads'?'on':''}" data-t="leads">☎️ Leads</button>
+        <button class="tab ${tab==='crew'?'on':''}" data-t="crew">👷 Crew</button>
         <button class="tab ${tab==='shop'?'on':''}" data-t="shop">🛠️ Equipment</button>
         <button class="tab ${tab==='pedia'?'on':''}" data-t="pedia">📚 Crete-o-pedia</button>
       </div>
       <div id="tab-body"></div>
     </div>`;
+
+  // the living town map
+  const st = townState();
+  Stage.mount(document.getElementById('town'), TOWN.W, TOWN.H);
+  Stage.draw = (ctx, t) => drawTown(ctx, t, st);
+  Stage.onClick = (x, y) => {
+    for (const m of st.markers) {
+      const p = lotMarkerPos(LOTS[m.lot]);
+      if (Math.hypot(x - p.x, y - p.y) < 26) {
+        if (m.story) return startStoryJob();
+        if (m.job) return startBid(m.job);
+      }
+    }
+  };
+
+  document.getElementById('lead-call').onclick = () => {
+    advanceDays(1);
+    const n = 1 + Math.round(Math.random() * 2);
+    for (let i = 0; i < n; i++) G.leads.push(genLead());
+    G.leads = G.leads.slice(-5);
+    if (G.applicants.length < 3 && Math.random() < 0.7) G.applicants.push(genApplicant());
+    save(); showHub(tab);
+  };
+
   app.querySelectorAll('.tab').forEach(b => b.onclick = () => showHub(b.dataset.t));
   const body = document.getElementById('tab-body');
   if (tab === 'story') renderStoryTab(body);
-  if (tab === 'leads') renderLeadsTab(body);
+  if (tab === 'crew') renderCrewTab(body);
   if (tab === 'shop') renderShopTab(body);
   if (tab === 'pedia') renderPediaTab(body);
 }
 
+function startStoryJob() {
+  const ch = chapterDef();
+  if (G.storyDone[ch.id]) return;
+  const missing = (ch.storyJob.needs || []).filter(id => !owns(id));
+  if (missing.length) {
+    return modal(`<h3>🔒 Not ready for this one</h3><p>${esc(ch.storyJob.name)} needs equipment you don’t own yet: <b>${missing.map(id => EQUIPMENT.find(e => e.id === id).name).join(', ')}</b>. Hit the Equipment tab.</p>`);
+  }
+  startBid(makeStoryJob(ch));
+}
+
 function showStoryIntro(ch) {
+  Stage.unmount();
   app.innerHTML = `
     <div class="panel">
       <h2>${esc(ch.title)}</h2>
@@ -138,16 +193,15 @@ function showStoryIntro(ch) {
 function renderStoryTab(el) {
   const ch = chapterDef();
   const sj = ch.storyJob;
-  const doneAll = G.storyDone[CHAPTERS.length];
-  if (doneAll) {
+  if (G.storyDone[CHAPTERS.length]) {
     el.innerHTML = `<h3>🏆 Story complete!</h3><p class="muted">The campaign is finished, but the phone keeps ringing — keep taking leads and growing the empire.</p>`;
     return;
   }
   if (G.storyDone[ch.id]) {
-    const next = CHAPTERS[ch.id]; // next chapter def
+    const next = CHAPTERS[ch.id];
     el.innerHTML = `<h3>✅ ${esc(ch.title)} — complete</h3>
       <p class="muted">Next: <b>${esc(next.title)}</b> unlocks at <b>${next.repReq} reputation</b> (you have ${G.rep}).
-      ${G.rep >= next.repReq ? 'You’re ready!' : 'Take side jobs from the Leads tab to build rep and cash.'}</p>
+      ${G.rep >= next.repReq ? 'You’re ready!' : 'Take side jobs off the map ($ markers) to build rep and cash.'}</p>
       ${G.rep >= next.repReq ? '<button class="btn primary" id="ch-next">📖 Start ' + esc(next.title) + '</button>' : ''}`;
     const b = document.getElementById('ch-next');
     if (b) b.onclick = () => { G.chapter++; save(); showHub(); };
@@ -157,11 +211,11 @@ function renderStoryTab(el) {
   el.innerHTML = `
     <h3>${JOB_TYPES[sj.type].icon} Story Job: ${esc(sj.name)}</h3>
     <p>${esc(sj.desc)}</p>
-    <p class="muted">${sj.len}×${sj.wid} ft · ${sj.thick}″ thick · ${sj.demo ? 'tear-out required' : 'new pour, no demo'}${sj.cold ? ' · ❄️ COLD weather pour' : ''}</p>
+    <p class="muted">${sj.len}×${sj.wid} ft · ${sj.thick}″ thick · ${sj.demo ? 'tear-out required' : 'new pour, no demo'}${sj.cold ? ' · ❄️ COLD weather pour' : ''} · find the ★ on the map</p>
     ${missing.length ? `<p class="bad">⚠️ Requires equipment: ${missing.map(id => EQUIPMENT.find(e => e.id === id).name).join(', ')} — hit the Equipment tab.</p>` : ''}
     <button class="btn primary" id="sj-go" ${missing.length ? 'disabled' : ''}>📋 Walk the Job & Bid It</button>`;
   const b = document.getElementById('sj-go');
-  if (b) b.onclick = () => startBid(makeStoryJob(ch));
+  if (b) b.onclick = startStoryJob;
 }
 
 function makeStoryJob(ch) {
@@ -170,11 +224,12 @@ function makeStoryJob(ch) {
   const sqft = sj.len * sj.wid;
   const fair = Math.max(800, Math.round(sqft * t.rate + (sj.demo ? sqft * 3 : 0)));
   return { ...sj, id: 'story' + ch.id, story: true, chapter: ch.id, fair,
+           lot: STORY_LOTS[ch.id] || 2,
            weather: rollWeather(sj.cold),
            note: ch.tutorial ? 'Dale will coach you through every step of this one.' : pick(CUSTOMER_NOTES) };
 }
 
-// ---------- leads ----------------------------------------------------------------
+// ---------- leads & applicants --------------------------------------------------
 
 function genLead() {
   const pool = ['sidewalk', 'patio', 'driveway', 'pad'];
@@ -194,41 +249,77 @@ function genLead() {
   const sqft = len * wid;
   const fair = Math.max(800, Math.round(sqft * t.rate + (demo ? sqft * 3 : 0)));
   const customer = pick(FIRST_NAMES);
+  const lots = [1, 2, 3, 5, 6, 7, 8, 9];
   return { id: 'lead' + Math.random().toString(36).slice(2, 8), type, len, wid, thick, demo, fair,
+           lot: lots[Math.floor(Math.random() * lots.length)],
            customer, name: `${customer}’s ${t.label}`, weather: rollWeather(false),
            desc: `${len}×${wid} ${t.label.toLowerCase()} on ${pick(STREETS)}. ${demo ? 'Old slab needs to come out first.' : 'Fresh grade, ready to form.'}`,
            note: pick(CUSTOMER_NOTES) };
 }
 
-function renderLeadsTab(el) {
-  el.innerHTML = `
-    <h3>☎️ The Phone</h3>
-    <p class="muted">Side jobs build cash and reputation between story chapters. Answering the phone burns a day.</p>
-    <button class="btn" id="lead-call">📞 Answer the Phone (advance 1 day)</button>
-    <div id="lead-list" class="lead-list"></div>`;
-  document.getElementById('lead-call').onclick = () => {
-    G.day++;
-    const n = 1 + Math.round(Math.random() * 2);
-    for (let i = 0; i < n; i++) G.leads.push(genLead());
-    G.leads = G.leads.slice(-6);
-    save(); showHub('leads');
+function genApplicant() {
+  const trait = pick(CREW_TRAITS);
+  const wage = trait.id === 'cheap' ? 70 + Math.round(Math.random() * 40)
+                                    : 130 + Math.round(Math.random() * 90);
+  return {
+    id: 'crew' + Math.random().toString(36).slice(2, 8),
+    name: pick(CREW_NAMES.filter(n => !(G.crew || []).some(c => c.name === n))) || pick(CREW_NAMES),
+    face: pick(['👷','👷‍♀️','🧔','👩‍🦰','🧑‍🦱','👨‍🦳','🧢']),
+    skin: pick(WORKER_SKINS),
+    trait: trait.id, wage,
+    bio: pick(CREW_BIOS),
   };
-  const list = document.getElementById('lead-list');
-  if (!G.leads.length) { list.innerHTML = '<p class="muted">No leads right now. Answer the phone.</p>'; return; }
-  G.leads.forEach(job => {
+}
+
+function renderCrewTab(el) {
+  const traitOf = id => CREW_TRAITS.find(t => t.id === id);
+  el.innerHTML = `
+    <h3>👷 The Crew</h3>
+    <p class="muted">Crew works every job with you — their traits change how the phases play, and their wages come out of every job. Max 3. Applicants show up when you answer the phone.</p>
+    <div class="cols">
+      <div>
+        <h4>On the payroll (${G.crew.length}/3)</h4>
+        <div id="crew-list">${G.crew.length ? '' : '<p class="muted small">Nobody yet. It’s just you and the radio.</p>'}</div>
+      </div>
+      <div>
+        <h4>Applicants</h4>
+        <div id="app-list">${G.applicants.length ? '' : '<p class="muted small">No applications. Answer the phone — word gets around.</p>'}</div>
+      </div>
+    </div>`;
+  const cl = el.querySelector('#crew-list');
+  G.crew.forEach(c => {
+    const t = traitOf(c.trait);
     const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <h4>${JOB_TYPES[job.type].icon} ${esc(job.name)}</h4>
-      <p class="muted">${esc(job.desc)}</p>
-      <p class="small">🗒️ ${esc(job.note)}</p>
-      <button class="btn primary">📋 Walk It & Bid</button>`;
-    card.querySelector('button').onclick = () => startBid(job);
-    list.appendChild(card);
+    card.className = 'card crew-card';
+    card.innerHTML = `<h4><span class="crew-face">${c.face}</span> ${esc(c.name)} <span class="price">${money(c.wage)}/job</span></h4>
+      <p class="small">${t.icon} <b>${t.name}</b> — ${esc(t.desc)}</p>
+      <p class="small muted">${esc(c.bio)}</p>
+      <button class="btn">🪪 Let Go</button>`;
+    card.querySelector('button').onclick = () => {
+      G.crew = G.crew.filter(x => x.id !== c.id); save(); showHub('crew');
+    };
+    cl.appendChild(card);
+  });
+  const al = el.querySelector('#app-list');
+  G.applicants.forEach(c => {
+    const t = traitOf(c.trait);
+    const card = document.createElement('div');
+    card.className = 'card crew-card';
+    card.innerHTML = `<h4><span class="crew-face">${c.face}</span> ${esc(c.name)} <span class="price">${money(c.wage)}/job</span></h4>
+      <p class="small">${t.icon} <b>${t.name}</b> — ${esc(t.desc)}</p>
+      <p class="small muted">${esc(c.bio)}</p>
+      <button class="btn primary" ${G.crew.length >= 3 ? 'disabled' : ''}>🤝 Hire</button>`;
+    card.querySelector('button').onclick = () => {
+      if (G.crew.length >= 3) return;
+      G.crew.push(c);
+      G.applicants = G.applicants.filter(x => x.id !== c.id);
+      save(); showHub('crew');
+    };
+    al.appendChild(card);
   });
 }
 
-// ---------- shop -------------------------------------------------------------------
+// ---------- shop / pedia ---------------------------------------------------------
 
 function renderShopTab(el) {
   el.innerHTML = `<h3>🛠️ Equipment Yard</h3>
@@ -258,6 +349,7 @@ function renderPediaTab(el) {
 // ---------- bidding -------------------------------------------------------------------
 
 function startBid(job) {
+  Stage.unmount();
   daleTip('bid', () => {
     const t = JOB_TYPES[job.type];
     const sqft = job.len * job.wid;
@@ -274,14 +366,14 @@ function startBid(job) {
         <p class="small">🗒️ ${esc(job.note)}</p>
         <div class="card">
           <h4>🧓 Dale’s cheat sheet</h4>
-          <p class="small muted">${t.label}s run about <b>$${t.rate.toFixed(2)}/sq ft</b> around here${job.demo ? ', plus ~$3/sq ft for tear-out' : ''}. Concrete, forms, fuel and labor come out of YOUR end — leave yourself margin, but don’t price yourself off the porch.</p>
+          <p class="small muted">${t.label}s run about <b>$${t.rate.toFixed(2)}/sq ft</b> around here${job.demo ? ', plus ~$3/sq ft for tear-out' : ''}. Concrete, forms, fuel, crew wages${crewWages() ? ` (yours run ${money(crewWages())}/job)` : ''} and labor come out of YOUR end — leave yourself margin, but don’t price yourself off the porch.</p>
         </div>
         <label class="lbl">Your bid:</label>
         <div class="bid-row"><span class="big-dollar">$</span><input id="bid-amt" class="input num" type="number" min="0" step="50" placeholder="0"></div>
         <button class="btn primary" id="bid-go">🤝 Shake Hands on It</button>
         <button class="btn" id="bid-back">↩️ Walk Away</button>
       </div>`;
-    document.getElementById('bid-back').onclick = () => showHub(job.story ? 'story' : 'leads');
+    document.getElementById('bid-back').onclick = () => showHub(job.story ? 'story' : undefined);
     document.getElementById('bid-go').onclick = () => {
       const amt = Number(document.getElementById('bid-amt').value) || 0;
       if (amt < 200) return modal('<h3>🧓 Dale grabs your clipboard</h3><p>"You can’t pour a slab for that. Write a real number, kid."</p>');
@@ -311,14 +403,31 @@ function resolveBid(job, bid) {
     G.currentJob = { ...job, bid, costs: { labor: 0, materials: 0, fees: 0 }, scores: {}, flags: {} };
   }
   modal(`<h3>${won ? '🤝 Bid WON' : '📵 Bid lost'}</h3><p>${msg}</p>${won ? `<p class="ok">Contract: <b>${money(bid)}</b> on completion.</p>` : ''}`,
-    () => won ? startJobPipeline() : showHub(job.story ? 'story' : 'leads'));
+    () => won ? showDriveOut() : showHub(job.story ? 'story' : undefined));
+}
+
+// truck rolls from the shop to the job's lot, then work starts
+function showDriveOut() {
+  const job = G.currentJob;
+  renderHUD();
+  app.innerHTML = `
+    <div class="panel">
+      <h2>🚛 Rolling Out — ${esc(job.name)}</h2>
+      <p class="muted">Tools loaded, coffee poured, radio on. Day ${G.day}.</p>
+      <div id="town" class="site-wrap"></div>
+    </div>`;
+  const st = townState();
+  st.markers = st.markers.filter(m => m.lot !== job.lot);   // that marker is now YOUR job
+  Stage.mount(document.getElementById('town'), TOWN.W, TOWN.H);
+  Stage.draw = (ctx, t) => drawTown(ctx, t, st);
+  driveTruckTo(st, job.lot ?? 6, () => startJobPipeline());
 }
 
 // ---------- the job pipeline -------------------------------------------------------
 
 function startJobPipeline() {
   const job = G.currentJob;
-  G.day += 1; renderHUD(); save();
+  advanceDays(1); renderHUD(); save();
   if (job.demo) {
     daleTip('demo', () => startDemoGame(job, res => {
       job.scores.demo = res.score;
@@ -336,6 +445,7 @@ function startJobPipeline() {
 
 function phaseForm() {
   const job = G.currentJob;
+  Stage.unmount();
   daleTip('forms', () => startFormsGame(job, res => {
     job.scores.forms = res.score;
     job.flags.birdbath = res.birdbath;
@@ -415,7 +525,6 @@ function phaseOrder() {
       o.specString = specString(o);
       o.cost = priceOrder(o);
       o.exactYards = exactYards;
-      // shortage check
       if (o.yards < exactYards * 0.97) {
         o.shorted = true;
         o.cost += MIX_PRICES.secondTruckFee + Math.round((exactYards * 1.05 - o.yards) * (MIX_PRICES.perYardBase + 30));
@@ -449,16 +558,17 @@ function phasePour() {
 function phaseFinish() {
   const job = G.currentJob;
   daleTip('finish', () => startFinishGame(job, job.order, job.weather, res => {
+    Stage.unmount();
     job.scores.finish = res.score;
     job.flags.bleedFouls = res.bleedFouls;
     job.flags.missed = res.missed;
+    job.flags.dogPrints = res.dogPrints;
     job.flags.handFinishedInterior = res.handFinishedInterior;
     if (res.jointsResult) { job.scores.joints = res.jointsResult.score; job.flags.jointInfo = res.jointsResult; finishResults(); }
     else if (owns('saw')) {
       modal(`<h3>🪚 Next morning</h3><p>Slab’s hard enough to walk. You fire up the early-entry saw — clean, calm, straight lines with a chalk box and a coffee.</p>`,
         () => startJointsGame(job, true, jr => { job.scores.joints = jr.score; job.flags.jointInfo = jr; finishResults(); }));
     } else {
-      // no saw and never tooled joints during the finishing window
       job.scores.joints = 10;
       job.flags.noJoints = true;
       finishResults();
@@ -471,11 +581,9 @@ function phaseFinish() {
 function gradeMix(job) {
   const o = job.order, interior = !!JOB_TYPES[job.type].interior, temp = job.weather.temp;
   let score = 100; const notes = [];
-  // bags
   if (o.bags <= 5) { score -= 20; notes.push(['bad', '5-bag mix outside is Big Mike behavior — weak surface, early wear.']); }
   else if (o.bags === 8) { score -= 8; notes.push(['warn', '8 bag is overkill — pricey, and rich mixes shrink-crack more.']); }
   else if (o.bags === 7 && !interior) notes.push(['ok', '7 bag exterior mix — strong like Dale likes it.']);
-  // air
   if (!interior) {
     if (o.air >= 6) notes.push(['ok', 'Full air entrainment — winter can do its worst.']);
     else { score -= 25; notes.push(['bad', `No${o.air ? 't enough' : ''} air in an exterior mix. First freeze-thaw cycle will scale this surface. Dale is disappointed.`]); }
@@ -484,7 +592,6 @@ function gradeMix(job) {
     else if (o.air === 3) notes.push(['ok', 'Low air interior mix — perfect under the trowel.']);
     else notes.push(['ok', 'Non-air interior mix — trowels fine.']);
   }
-  // NCA vs temp
   if (temp <= 42) {
     if (o.nca >= 2) notes.push(['ok', '2% NCA on a bitter day — set right on schedule.']);
     else if (o.nca === 1) { score -= 6; notes.push(['warn', '1% NCA helped, but you were finishing by headlights.']); }
@@ -494,18 +601,15 @@ function gradeMix(job) {
     else if (o.nca === 0) { score -= 8; notes.push(['warn', 'Chilly pour with no NCA — long, risky set.']); }
     else { score -= 4; notes.push(['warn', '2% on a mild-cold day — it got away from you a little.']); }
   } else if (o.nca >= 1) { score -= 12; notes.push(['bad', `Accelerator on a ${temp}°F day — the mud flashed on you. Why, champ.`]); }
-  // fiber / chert (exterior niceties)
   if (!interior) {
     if (o.fiber) notes.push(['ok', 'Microfiber in the mix — plastic shrinkage cracks never stood a chance.']);
     else { score -= 5; notes.push(['warn', 'No fiber — a few hairline surface checks show up as it cures.']); }
     if (o.chert) notes.push(['ok', 'Low-chert rock — no popouts on this slab, ever.']);
     else { score -= 5; notes.push(['warn', 'Standard aggregate — expect a popout or two come spring.']); }
   }
-  // slump
   if (o.slump >= 6) { score -= 12; notes.push(['bad', `${o.slump}″ slump soup — easy to push, weak as gas-station coffee.`]); }
   else if (o.slump === 3) { score -= 4; notes.push(['warn', '3″ slump — strong, but the crew’s backs filed a grievance.']); }
   else notes.push(['ok', `${o.slump}″ slump placed like a dream.`]);
-  // yardage
   if (o.shorted) { score -= 15; notes.push(['bad', 'Ran short on yardage — cold joint where the cleanup load tied in.']); }
   else if (o.wasted) { score -= 4; notes.push(['warn', 'Way over-ordered — the wash-out pit ate your margin.']); }
   else notes.push(['ok', `Yardage math was on the money (needed ${o.exactYards.toFixed(1)}, ordered ${o.yards}).`]);
@@ -526,9 +630,10 @@ function finishResults() {
   if (job.flags.coldJoint) quality -= 4;
   quality = clamp(quality, 5, 100);
 
-  // money
   const fuel = 60 + (job.demo ? 40 : 0);
   job.costs.fees += fuel;
+  const wages = crewWages();
+  job.costs.labor += wages;
   const costs = job.costs.labor + job.costs.materials + job.costs.fees;
   let callback = 0;
   if (quality < 55) callback = Math.round(job.bid * 0.12);
@@ -536,7 +641,7 @@ function finishResults() {
   G.cash += net;
   const repDelta = clamp(Math.round((quality - 58) / 4) + (job.story ? 3 : 0), -8, 14);
   G.rep = clamp(G.rep + repDelta, 0, 100);
-  G.jobsDone++; G.day += 1;
+  G.jobsDone++; advanceDays(1);
 
   const tier = REVIEWS.find(r => quality >= r.min);
   const review = pick(tier.texts);
@@ -572,7 +677,7 @@ function finishResults() {
           <table class="score-table">
             <tr><td>Contract</td><td>${money(job.bid)}</td></tr>
             <tr><td>Materials &amp; concrete</td><td>-${money(job.costs.materials)}</td></tr>
-            <tr><td>Labor</td><td>-${money(job.costs.labor)}</td></tr>
+            <tr><td>Labor${wages ? ` (incl. ${money(wages)} crew wages)` : ''}</td><td>-${money(job.costs.labor)}</td></tr>
             <tr><td>Fees, fuel, dump</td><td>-${money(job.costs.fees)}</td></tr>
             ${callback ? `<tr class="bad"><td>Warranty callback</td><td>-${money(callback)}</td></tr>` : ''}
             <tr class="total"><td>Net</td><td class="${net >= 0 ? 'ok' : 'bad'}">${money(net)}</td></tr>
@@ -585,19 +690,21 @@ function finishResults() {
         ${job.flags.birdbath ? '<p class="small bad">• Bird bath in the flow line — first rain proved it. Customer noticed.</p>' : ''}
         ${job.flags.missed && job.flags.missed.length ? `<p class="small bad">• Skipped finishing steps: ${job.flags.missed.join(', ')}.</p>` : ''}
         ${job.flags.bleedFouls ? '<p class="small bad">• Finished through bleed water — surface will dust.</p>' : ''}
+        ${job.flags.dogPrints ? '<p class="small bad">• Dog prints in the finish. The customer named him "Rebar." You are not laughing.</p>' : ''}
         ${job.flags.handFinishedInterior ? '<p class="small bad">• Hand-magging a whole garage floor… buy the power trowel, kid.</p>' : ''}
         ${job.flags.noJoints ? '<p class="small bad">• NO control joints?! That’s Big Mike behavior. A lightning-bolt crack is already forming.</p>'
           : job.flags.jointInfo && job.flags.jointInfo.bad ? '<p class="small bad">• Panels over max joint spacing — a random crack is already plotting its route.</p>'
           : '<p class="small ok">• Joints look right. The cracks will land where YOU said.</p>'}
       </div>
-      <button class="btn primary" id="res-go">${isFinal ? '🏆 See How It Ends' : '🏠 Back to the Shop'}</button>
+      <button class="btn primary" id="res-go">${isFinal ? '🏆 See How It Ends' : '🏠 Back to Town'}</button>
     </div>`;
-  document.getElementById('res-go').onclick = () => isFinal ? showEpilogue(quality) : showHub(isStory ? 'story' : 'leads');
+  document.getElementById('res-go').onclick = () => isFinal ? showEpilogue(quality) : showHub(isStory ? 'story' : undefined);
 }
 
 // ---------- endings -----------------------------------------------------------------
 
 function showEpilogue(finalQuality) {
+  Stage.unmount();
   G.storyDone[CHAPTERS.length] = true; save();
   const good = finalQuality >= 70;
   app.innerHTML = `
@@ -615,17 +722,19 @@ function showEpilogue(finalQuality) {
       <button class="btn primary" id="ep-go">🏠 Keep Pouring (free play)</button>
       <button class="btn" id="ep-title">🔁 Title Screen</button>
     </div>`;
-  document.getElementById('ep-go').onclick = () => showHub('leads');
+  document.getElementById('ep-go').onclick = () => showHub();
   document.getElementById('ep-title').onclick = showTitle;
 }
 
 function showGameOver() {
+  Stage.unmount();
   app.innerHTML = `
     <div class="panel">
       <h1>💸 GAME OVER — The Bank Calls It</h1>
       <p>Five grand in the hole, the truck payment is due, and the yard sign blew into the ditch. Even Dale can’t talk the banker down this time.</p>
       <p class="muted">Big Mike honks as he drives past. Twice.</p>
-      <button class="btn primary" id="go-new">🆕 Start Over</button>`;
+      <button class="btn primary" id="go-new">🆕 Start Over</button>
+    </div>`;
   document.getElementById('go-new').onclick = () => { localStorage.removeItem('pourDecisionsSave'); showTitle(); };
 }
 

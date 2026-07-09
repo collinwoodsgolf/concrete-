@@ -136,6 +136,31 @@ const CRETEPEDIA = [
   ['Demurrage', 'The batch plant gives you a set unload time per truck. Go over and they bill you by the minute. A clean, fast pour plan isn’t just pro — it’s profit.'],
 ];
 
+// ---- Crew -----------------------------------------------------------------
+
+// which town lot each chapter's story job sits on (lot 0 = shop, lot 4 = City Hall)
+const STORY_LOTS = { 1: 2, 2: 7, 3: 8, 4: 6, 5: 4 };
+
+const CREW_TRAITS = [
+  { id:'fast',     name:'Fast Hands',    icon:'⚡', desc:'Demo hits count double. Grew up swinging a maul.' },
+  { id:'screed',   name:'Screed Wizard', icon:'📏', desc:'+1 section placed per pass on pour day.' },
+  { id:'finisher', name:'Old Pro',       icon:'🎯', desc:'Finishing timing windows are 15% wider. Has opinions about your edger.' },
+  { id:'steady',   name:'Steady Eye',    icon:'👁️', desc:'Reads the string line like a laser when setting forms.' },
+  { id:'cheap',    name:'Works for Gas Money', icon:'⛽', desc:'No special skills, but the price is right.' },
+];
+
+const CREW_NAMES = ['Duane','Cletus','Shawna','Bogdan','T-Bone','Ruthie','Half-Stick','Merle','Junior','Peggy','Vlad','Skeeter','Donna','Curtis','Moose','Irene','Lyle','Tammy'];
+const CREW_BIOS = [
+  'Left the roofing crew "over creative differences."',
+  'Can back a trailer into anything. Anything.',
+  'Brings a cooler. Never says what’s in it.',
+  'Third generation flatworker. Hates Big Mike on principle.',
+  'Talks to the concrete. The concrete listens.',
+  'Got fired by Big Mike for "doing it too good."',
+  'Eats lunch standing up, staring at the slab.',
+  'Once bull-floated a slab during a hailstorm. Won’t elaborate.',
+];
+
 const DALE_TIPS = {
   bid:    'Dale: "Walk the job, measure it, price it fair. My cheat sheet: rate per square foot times the footage, plus demo if you’re tearing out. Bid too high you lose the job, too low you work for free."',
   demo:   'Dale: "Bust it into chunks you can actually lift. Faster you clear it, less you bleed in labor. Equipment turns demo from a funeral into a Tuesday."',

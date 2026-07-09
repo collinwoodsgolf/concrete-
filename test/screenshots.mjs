@@ -1,4 +1,6 @@
 // Capture real rendered screenshots of game screens via WebKitWebDriver.
+// Requires: webkit2gtk-driver + xvfb, a static server on :8080, and
+//   xvfb-run -a WebKitWebDriver --port=4444 --host=127.0.0.1
 import { writeFileSync, mkdirSync } from 'node:fs';
 
 const WD = 'http://127.0.0.1:4444';
@@ -23,21 +25,19 @@ const session = await wd('POST', '/session', {
 const sid = session.sessionId;
 const S = p => `/session/${sid}${p}`;
 
-await wd('POST', S('/window/rect'), { x: 0, y: 0, width: 1150, height: 860 });
+await wd('POST', S('/window/rect'), { x: 0, y: 0, width: 1150, height: 900 });
 await wd('POST', S('/url'), { url: GAME });
 await new Promise(r => setTimeout(r, 1500));
 
-async function exec(script) {
-  return wd('POST', S('/execute/sync'), { script, args: [] });
-}
+const exec = script => wd('POST', S('/execute/sync'), { script, args: [] });
+const pause = ms => new Promise(r => setTimeout(r, ms));
 async function shot(name) {
   const b64 = await wd('GET', S('/screenshot'));
   writeFileSync(`shots/${name}.png`, Buffer.from(b64, 'base64'));
   console.log('📸', name);
 }
-const pause = ms => new Promise(r => setTimeout(r, ms));
 
-// a mid-game save: chapter 2, some cash/rep/equipment
+// mid-game save: chapter 2, cash, gear, a crew
 const setup = `
   localStorage.clear();
   G = newState('Legacy Concrete & Outdoor');
@@ -45,6 +45,13 @@ const setup = `
   G.seenIntro = {1:true, 2:true}; G.storyDone = {1:true};
   G.equipment = { compactor:true, laser:true, eJack:true, powerScreed:true };
   G.jobsDone = 6;
+  G.crew = [
+    { id:'c1', name:'Duane',  face:'👷', skin:'#c8956c', trait:'screed',   wage:180, bio:'Can back a trailer into anything. Anything.' },
+    { id:'c2', name:'Shawna', face:'👷‍♀️', skin:'#8a5a3c', trait:'finisher', wage:210, bio:'Got fired by Big Mike for "doing it too good."' },
+  ];
+  G.applicants = [
+    { id:'a1', name:'Skeeter', face:'🧢', skin:'#e0b090', trait:'fast', wage:150, bio:'Talks to the concrete. The concrete listens.' },
+  ];
   for (let i = 0; i < 3; i++) G.leads.push(genLead());
   renderHUD();
 `;
@@ -53,34 +60,40 @@ const job = `makeStoryJob(CHAPTERS[1])`; // Gary's driveway 48x18x5, demo
 // 1. title
 await shot('01-title');
 
-// 2. story intro (chapter 2 beats)
-await exec(setup + `showStoryIntro(CHAPTERS[1]);`);
-await shot('02-story');
+// 2. the town map hub
+await exec(setup + `showHub('story');`);
+await pause(900);
+await shot('02-town');
 
-// 3. hub: leads
-await exec(`showHub('leads');`);
-await shot('03-hub-leads');
+// 3. crew tab
+await exec(`showHub('crew');`);
+await pause(500);
+await shot('03-crew');
 
-// 4. hub: equipment shop
+// 4. equipment shop
 await exec(`showHub('shop');`);
+await pause(400);
 await shot('04-shop');
 
 // 5. bid walk
-await exec(`G.chapter = 1; startBid(${job}); G.chapter = 2;`);
+await exec(`startBid(${job});`);
 await exec(`const m=document.querySelector('#modal-ok'); if(m)m.click();`);
 await exec(`const b=document.getElementById('bid-amt'); if(b)b.value='8200';`);
 await shot('05-bid');
 
-// 6. demo minigame, partially busted
+// 6. demo on the job site, mid-teardown
 await exec(`
   G.currentJob = Object.assign(${job}, {bid: 8200, costs:{labor:0,materials:0,fees:0}, scores:{}, flags:{}});
   startDemoGame(G.currentJob, ()=>{});
-  [...document.querySelectorAll('.demo-tile')].forEach((t,i)=>{ if (i % 3 === 0 || i < 14) { t.click(); t.click(); } });
 `);
+await pause(400);
+await exec(`for (let i = 0; i < 22; i++) window.__demoHit(i);
+            for (let i = 0; i < 12; i++) window.__demoHit(i);`);
+await pause(500);
 await shot('06-demo');
 
 // 7. forms & flow lines
-await exec(`startFormsGame(G.currentJob, ()=>{});`);
+await exec(`window.__demoHit && delete window.__demoHit; startFormsGame(G.currentJob, ()=>{});`);
 await shot('07-forms');
 
 // 8. batch plant order with live quote
@@ -98,22 +111,34 @@ await exec(`
 await pause(300);
 await shot('08-order');
 
-// 9. pour, mid-pour
+// 9. pour day: mixer, chute, wet mud going in
 await exec(`
   G.currentJob.order = {yards:14, bags:7, air:6, slump:4, fiber:1, chert:1, nca:0,
     exactYards: 13.33, specString:'7 bag, low chert, air, microfiber, 4″ slump'};
   startPourGame(G.currentJob, G.currentJob.order, ()=>{});
 `);
-await pause(400);
-await exec(`[...document.querySelectorAll('.pour-tile')].slice(0, 26).forEach(t=>t.click());`);
+await pause(600);
+await exec(`for (let k = 0; k < 6; k++) window.__pourCell(0);`);
+await pause(1200);
 await shot('09-pour');
 
-// 10. finishing timeline mid-set with bleed water
-await exec(`startFinishGame(G.currentJob, G.currentJob.order, {temp: 64, desc:'⛅ decent'}, ()=>{});`);
-await pause(3000);
+// 10. finishing on-site — rig the RNG so the dog shows up
+await exec(`
+  window.__origRandom = Math.random;
+  Math.random = () => 0.2;   // guarantees the dog, at ~37% set
+  startFinishGame(G.currentJob, G.currentJob.order, {temp: 64, desc:'⛅ decent'}, ()=>{});
+  Math.random = window.__origRandom;
+`);
+await pause(2500);
 await exec(`document.getElementById('act-bull').click();`);
-await pause(12000); // let cursor reach the bleed-water zone
-await shot('10-finish');
+// wait for the dog to be on the slab
+for (let i = 0; i < 120; i++) {
+  await pause(500);
+  const dogOut = await exec(`return !!document.getElementById('act-dog');`);
+  if (dogOut) break;
+}
+await pause(900);   // let him get onto the canvas
+await shot('10-finish-dog');
 
 // 11. control joints with some cuts made
 await exec(`startJointsGame(G.currentJob, true, ()=>{});`);

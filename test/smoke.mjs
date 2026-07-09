@@ -54,14 +54,14 @@ $('#bid-go').click();
 await clickModalOk(); // bid won modal
 step('bid won');
 
-// demo phase (sidewalk has demo)
+// demo phase (sidewalk has demo) — jsdom has no canvas, so drive the test hooks
 await clickModalOk().catch(() => {}); // Dale demo tip
-await waitFor(() => $('#demo-grid'), 'demo grid');
+await waitFor(() => window.__demoHit, 'demo minigame');
 step('demo minigame rendered');
 await waitFor(() => {
-  const tiles = [...document.querySelectorAll('.demo-tile:not(.done)')];
-  tiles.slice(0, 30).forEach(t => t.click());
-  return !document.querySelector('#demo-grid .demo-tile:not(.done)');
+  if (!window.__demoHit) return true;   // finished (hook removed)
+  for (let i = 0; i < 60 && window.__demoHit; i++) window.__demoHit(i % 60);
+  return !window.__demoHit;
 }, 'demo complete', 30000);
 await clickModalOk(); // demo complete modal
 step('demo complete');
@@ -90,13 +90,14 @@ $('#o-go').click();
 await clickModalOk(); // order placed
 step('order placed: 7 bag, low chert, air, microfiber');
 
-// pour phase
+// pour phase — again via the exposed hook
 await clickModalOk(); // Dale pour tip
-await waitFor(() => $('#pour-grid'), 'pour grid');
+await waitFor(() => window.__pourCell, 'pour minigame');
 step('pour minigame rendered');
 await waitFor(() => {
-  [...document.querySelectorAll('#pour-grid .demo-tile:not(.done)')].slice(0, 20).forEach(t => t.click());
-  return !document.querySelector('#pour-grid .demo-tile:not(.done)');
+  if (!window.__pourCell) return true;
+  for (let i = 0; i < 80 && window.__pourCell; i++) window.__pourCell(0);
+  return !window.__pourCell;
 }, 'pour complete', 30000);
 await clickModalOk(); // truck washed out
 step('pour complete');
@@ -109,7 +110,7 @@ const cursorPct = () => parseFloat($('#tl-cursor')?.style.left || '0');
 $('#act-bull').click();
 
 // joints window opens mid-set (no saw owned in fresh game)
-await waitFor(() => cursorPct() > 50, 'mid-set window', 120000);
+await waitFor(() => { $('#act-dog')?.click(); return cursorPct() > 50; }, 'mid-set window', 120000);
 $('#act-edge').click();
 $('#act-joints').click();
 const jointsBtn = await waitFor(() => $('#joints-done'), 'joints overlay');
