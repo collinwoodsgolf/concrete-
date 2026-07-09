@@ -17,28 +17,35 @@ Every phase of a real flatwork job is in the game:
 | ✂️ **Control joints** | Tool or saw-cut joints — 2.5× thickness rule, panels near square |
 | 🪄 **Finish** | Bull float, respect the bleed water, edge, broom or power-trowel in the timing windows |
 
-And it plays out in a **living, procedurally-drawn world** (all canvas, no
-image assets):
+And it plays out in a **gritty top-down world** — GTA-style bird's-eye camera,
+everything procedurally drawn (noise-textured asphalt, grass, and concrete;
+sun-cast shadows; 2.5D building facades; color grading and vignette). No image
+assets anywhere.
 
-- 🗺️ **Town map** — Cedar Falls, drawn house by house: your shop, City Hall,
-  seasonal trees, falling leaves or snow by chapter. Job leads appear as
-  bouncing `$` markers on real houses; the story job is the `★`. Win a bid and
-  your truck drives across town to the site.
-- 🏘️ **Animated job sites** — every phase happens on the customer's actual
-  lot: the slab cracks apart chunk by chunk during demo, the mixer's drum
-  spins while the chute pours mud where you click, your crew screeds along
-  the pour front, bleed water sheens across the setting slab, and broom
-  lines / trowel swirls / joint cuts appear as you finish. The customer
-  watches from the porch.
-- 👷 **Crew (Sims-style)** — applicants call when word gets around. Hire up
-  to 3, each with a name, portrait, bio, wage, and a trait that changes how
-  phases play (Fast Hands doubles demo damage, Screed Wizard places +1
-  section, Old Pro widens finishing windows, Steady Eye reads string lines).
-  They appear on-site, working. Wages come out of every job.
+- 🗺️ **Town map** — Cedar Falls from above: cracked asphalt with wear tracks
+  and a crosswalk, curbs and jointed sidewalks, shingled roofs with extruded
+  house fronts, parked cars, your shop with the CONCRETE roof sign, City Hall
+  with columns and a dome. Leads appear as `$` markers on real houses; the
+  story job is the `★`. Win a bid and your truck drives across town.
+- 🚶 **You're the foreman** — on the job site, click where you want to work
+  and your guy (white hard hat, lime vest) walks over and does it: swings the
+  breaker chunk by chunk during demo, places and screeds mud on pour day,
+  steps onto the slab for every finishing pass.
+- 🏘️ **Animated job sites** — the old slab cracks and turns to rubble, the
+  mixer's drum spins while the chute follows the pour front, bleed water
+  sheens across the setting surface, broom lines / trowel swirls / saw cuts
+  appear as you work. The customer watches from the porch.
+- 👷 **Crew with morale & levels** — hire up to 3 workers, each with a trait
+  that changes gameplay (Fast Hands, Screed Wizard, Old Pro, Steady Eye).
+  They gain XP and level up (and negotiate raises), and their morale rises
+  and falls with job quality — let it crater and they stop performing.
+- 🌦️ **Site events** — summer squalls roll in mid-pour and wash your surface
+  paste if the slab's still open; the county inspector shows up on story jobs
+  with a clipboard and no sense of humor (pass his spec check for rep, fail
+  it and word travels); and sometimes a dog charges the wet slab — SHOO it or
+  live with the pawprints forever.
 - 📆 **Overhead** — every day costs money (truck payment, insurance, coffee).
   Idle time hurts.
-- 🐕 **Site events** — sometimes a dog charges the wet slab. SHOO it in time
-  or live with pawprints in your finish forever.
 
 Five story chapters (sidewalk → driveways → cold-weather pour → garage floor →
 the City Hall plaza showdown), reputation, a Crete-o-pedia of real concrete
@@ -51,7 +58,7 @@ told you. He TOLD you.
 | | |
 |---|---|
 | ![Town](docs/screens/02-town.png) | ![Demo](docs/screens/06-demo.png) |
-| ![Pour](docs/screens/09-pour.png) | ![Finishing + dog](docs/screens/10-finish-dog.png) |
+| ![Rain mid-pour](docs/screens/09b-pour-rain.png) | ![Inspector + pawprints](docs/screens/10b-inspector.png) |
 | ![Crew](docs/screens/03-crew.png) | ![Results](docs/screens/12-results.png) |
 
 More in [`docs/screens/`](docs/screens/) — regenerate with

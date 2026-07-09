@@ -166,6 +166,13 @@ p { margin: 8px 0; }
 .town-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .crew-card { margin: 8px 0; }
 .crew-face { font-size: 22px; }
+.lvl { font-size: 12px; letter-spacing: -2px; }
+.morale { height: 7px; background: #141820; border-radius: 4px; overflow: hidden; margin: 6px 0 2px; border: 1px solid var(--line); }
+.morale-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+.morale-fill.hi { background: var(--ok); }
+.morale-fill.mid { background: var(--warn); }
+.morale-fill.lo { background: var(--bad); }
+.insp-fail { border-color: var(--bad); }
 .btn.act.dog { background: var(--bad); color: #fff; font-weight: 700; border-color: #c94f4f; animation: dogpulse .5s infinite alternate; }
 @keyframes dogpulse { from { transform: scale(1); } to { transform: scale(1.06); } }
 

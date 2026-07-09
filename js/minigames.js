@@ -1,7 +1,8 @@
 // ============================================================
 // POUR DECISIONS — minigames
-// Demo, pour and finishing play out on the animated job-site
-// canvas (world.js). Forms and joints use precise SVG tools.
+// Demo, pour and finishing play out on the bird's-eye job site
+// (world.js). You ARE the foreman: click where you want to work
+// and he walks over and does it. Forms and joints use SVG tools.
 // Each minigame calls done(result) when finished.
 // ============================================================
 
@@ -19,11 +20,12 @@ function startDemoGame(job, done) {
   if (owns('skid') && owns('breaker')) { hp = 1; aoe = true; tool = 'Skid Steer + Hydraulic Breaker'; }
   const power = 1 + (crewHas('fast') ? 1 : 0);
 
-  const par = tiles * hp * 0.55 / power;
+  const par = tiles * ((hp / power) * 0.5 + 0.5);   // swing time + walking
   let elapsed = 0, broken = 0, timer = null, finished = false;
   const grid = Array.from({ length: tiles }, () => hp);
   const R = slabRect(job);
-  const state = { dust: [], lastHit: -1, hitT: 0 };
+  const state = { dust: [] };
+  const player = makePlayer(R.x - 70, R.y + R.h + 46);
 
   function chunkRect(i) {
     const r = Math.floor(i / cols), c = i % cols;
@@ -34,7 +36,7 @@ function startDemoGame(job, done) {
     app.innerHTML = `
       <div class="panel">
         <h2>🔨 Demo Day — ${esc(job.name)}</h2>
-        <p class="muted">${sqft} sq ft of busted old concrete has to come out. Click the slab to break it up. Tool: <b>${tool}</b>${aoe ? ' (smashes neighbors too!)' : ''}${crewHas('fast') ? ' · 👷 Fast Hands on the crew: double damage' : ''}</p>
+        <p class="muted">${sqft} sq ft of busted old concrete has to come out. <b>Click the slab — your foreman walks over and breaks it out.</b> Tool: <b>${tool}</b>${aoe ? ' (smashes neighbors too!)' : ''}${crewHas('fast') ? ' · Fast Hands on the crew: double damage' : ''}</p>
         <div class="statline">
           <span>⏱️ Labor: <b id="demo-time">0.0s</b> (par ${par.toFixed(0)}s)</span>
           <span>💸 Crew cost: <b id="demo-cost">$0</b></span>
@@ -46,28 +48,33 @@ function startDemoGame(job, done) {
     Stage.onClick = (x, y) => {
       const c = Math.floor((x - R.x) / (R.w / cols));
       const r = Math.floor((y - R.y) / (R.h / rows));
-      if (c >= 0 && c < cols && r >= 0 && r < rows) hit(r * cols + c);
+      if (c >= 0 && c < cols && r >= 0 && r < rows) {
+        const i = r * cols + c;
+        if (grid[i] <= 0) return;
+        const cr = chunkRect(i);
+        player.tx = cr.x + cr.w / 2 - 14;
+        player.ty = cr.y + cr.h / 2 + 10;
+        player.pending = i;
+      } else {                                   // just walk there
+        player.tx = x; player.ty = y; player.pending = null; player.pose = 'idle';
+      }
     };
     Stage.draw = (ctx, t) => {
       drawSiteBase(ctx, t, job);
       // old slab chunks
       for (let i = 0; i < tiles; i++) {
         const cr = chunkRect(i);
-        if (grid[i] <= 0) {                                   // rubble
-          ctx.fillStyle = '#7d6a52';
+        if (grid[i] <= 0) {
+          ctx.fillStyle = pat(ctx, 'rubble');
           ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
-          ctx.fillStyle = '#94836b';
-          for (let k = 0; k < 4; k++) {
-            const rx = cr.x + ((i * 37 + k * 53) % 83) / 83 * (cr.w - 8);
-            const ry = cr.y + ((i * 61 + k * 29) % 71) / 71 * (cr.h - 6);
-            ctx.fillRect(rx, ry, 7, 5);
-          }
         } else {
-          ctx.fillStyle = i % 2 ? '#a9a49a' : '#b0aba1';       // tired old concrete
+          ctx.fillStyle = pat(ctx, 'oldConcrete');
           ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
-          ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1.5;
+          ctx.fillStyle = `rgba(0,0,0,${(i % 5) * 0.015})`;   // tonal variety
+          ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
+          ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 1.5;
           const dmg = hp - grid[i];
-          for (let k = 0; k < dmg * 2 + 1; k++) {              // crack lines grow with damage
+          for (let k = 0; k < dmg * 2 + 1; k++) {
             const sx = cr.x + ((i * 17 + k * 41) % 97) / 97 * cr.w;
             const sy = cr.y + ((i * 23 + k * 31) % 89) / 89 * cr.h;
             ctx.beginPath(); ctx.moveTo(sx, sy);
@@ -77,20 +84,31 @@ function startDemoGame(job, done) {
           }
         }
       }
-      ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 2;
+      // old slab edge shadow
+      ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
       ctx.strokeRect(R.x, R.y, R.w, R.h);
       // machines & crew
-      if (owns('skid')) drawSkid(ctx, 120, R.y + 40, 90);
-      const crew = (G.crew || []);
-      crew.forEach((c, k) => drawWorker(ctx, R.x - 40, R.y - 24 + k * 48, 34, t, 'shovel', c.skin));
-      // you, hammering at the last hit chunk
-      const pos = state.lastHit >= 0 ? chunkRect(state.lastHit) : { x: R.x + R.w / 2, y: R.y - 40, w: 0, h: 0 };
-      drawWorker(ctx, pos.x + pos.w / 2, pos.y + pos.h / 2 - 14, 38, t, elapsed - state.hitT < 0.7 ? 'jack' : 'idle');
+      if (owns('skid')) drawSkid(ctx, 170, R.y - 40, 64, 0.5);
+      (G.crew || []).forEach((c, k) =>
+        drawWorker(ctx, R.x - 44, R.y - 10 + k * 52, 34, t, 'shovel', c.skin));
+      // the foreman: walk, then swing
+      const arrived = updatePlayer(player);
+      if (arrived && player.pending !== null && !finished) {
+        player.pose = 'jack';
+        player.workT += 1 / 60;
+        if (player.workT >= 0.34) {
+          player.workT = 0;
+          swing(player.pending);
+          if (grid[player.pending] <= 0) { player.pending = null; player.pose = 'idle'; }
+        }
+      } else if (!arrived) player.pose = 'idle';
+      drawPlayer(ctx, player, t);
       drawDust(ctx, state);
+      siteGrade(ctx);
     };
   }
 
-  function hit(i) {
+  function swing(i) {
     if (finished || grid[i] <= 0) return;
     const targets = [i];
     if (aoe) {
@@ -107,12 +125,11 @@ function startDemoGame(job, done) {
         siteDust(state, cr.x + cr.w / 2, cr.y + cr.h / 2);
       }
     });
-    state.lastHit = i; state.hitT = elapsed;
     const prog = document.getElementById('demo-prog');
     if (prog) prog.textContent = `${broken}/${tiles}`;
     if (broken >= tiles) finish();
   }
-  window.__demoHit = hit;   // test hook
+  window.__demoHit = swing;   // test hook (jsdom has no canvas loop)
 
   function finish() {
     finished = true;
@@ -224,7 +241,7 @@ function startPourGame(job, order, done) {
   const total = cols * rowsN;
   const perClick = (owns('powerScreed') ? 3 : 1) + (crewHas('screed') ? 1 : 0);
 
-  let truckTime = total * 1.05 + 8;
+  let truckTime = total * 1.05 + 8 + total * 0.4;      // includes walking allowance
   if (owns('buggy')) truckTime *= 1.25;
   if (order.slump <= 3) truckTime *= 0.85;
   if (order.slump >= 6) truckTime *= 1.1;
@@ -234,7 +251,13 @@ function startPourGame(job, order, done) {
   const fillT = Array(total).fill(0);
   let placed = 0, t = truckTime, over = 0, timer = null, finished = false, clock = 0;
   const R = slabRect(job);
-  const state = { dust: [] };
+  const state = { dust: [], rain: null };
+  const player = makePlayer(R.x - 70, R.y + R.h + 46);
+
+  // weather roll: summer squalls are real (never in the chapter-3 cold snap)
+  const rainRisk = G.chapter === 2 ? 0.35 : G.chapter === 3 ? 0 : 0.15;
+  const rainAt = Math.random() < rainRisk ? Math.round(truckTime * (0.35 + Math.random() * 0.3)) : -1;
+  let unfilledAtRain = 0;
 
   function cellRect(i) {
     const r = Math.floor(i / cols), c = i % cols;
@@ -245,11 +268,12 @@ function startPourGame(job, order, done) {
     app.innerHTML = `
       <div class="panel">
         <h2>🚛 Pour Day — ${esc(job.name)}</h2>
-        <p class="muted">${order.yards} yd³ of <b>${order.specString}</b> coming down the chute. Click the forms to place &amp; screed sections before the unload window closes — overtime is <b>demurrage at $3/sec</b>.${owns('powerScreed') ? ' Power screed: 3 sections a pass!' : ''}${crewHas('screed') ? ' 👷 Screed Wizard: +1 section.' : ''}</p>
+        <p class="muted">${order.yards} yd³ of <b>${order.specString}</b> coming down the chute. <b>Click the forms — the foreman walks over, places and screeds.</b> Overtime is <b>demurrage at $3/sec</b>.${owns('powerScreed') ? ' Power screed: 3 sections a pass!' : ''}${crewHas('screed') ? ' Screed Wizard: +1 section.' : ''}</p>
         <div class="statline">
           <span>⏱️ Truck clock: <b id="pour-time" class="ok">${t}s</b></span>
           <span>🟩 Placed: <b id="pour-prog">0/${total}</b></span>
           <span>💸 Demurrage: <b id="pour-fee">$0</b></span>
+          <span id="pour-wx"></span>
         </div>
         <div id="site" class="site-wrap"></div>
       </div>`;
@@ -257,48 +281,71 @@ function startPourGame(job, order, done) {
     Stage.onClick = (x, y) => {
       const c = Math.floor((x - R.x) / (R.w / cols));
       const r = Math.floor((y - R.y) / (R.h / rowsN));
-      if (c >= 0 && c < cols && r >= 0 && r < rowsN) place(r * cols + c);
+      if (c >= 0 && c < cols && r >= 0 && r < rowsN) {
+        const i = r * cols + c;
+        const cr = cellRect(i);
+        player.tx = cr.x + cr.w / 2 - 12;
+        player.ty = cr.y + cr.h / 2 + 8;
+        player.pending = i;
+      } else {
+        player.tx = x; player.ty = y; player.pending = null; player.pose = 'idle';
+      }
     };
     Stage.draw = (ctx, tt) => {
       drawSiteBase(ctx, tt, job);
       // base gravel inside forms
-      ctx.fillStyle = '#8f8574';
+      ctx.fillStyle = pat(ctx, 'gravel');
       ctx.fillRect(R.x, R.y, R.w, R.h);
-      ctx.fillStyle = 'rgba(0,0,0,.08)';
-      for (let k = 0; k < 60; k++)
-        ctx.fillRect(R.x + (k * 53 % 97) / 97 * R.w, R.y + (k * 31 % 89) / 89 * R.h, 3, 2);
       // wet concrete cells
       for (let i = 0; i < total; i++) {
         if (!filled[i]) continue;
         const cr = cellRect(i);
         const age = clock - fillT[i];
-        ctx.fillStyle = age < 0.6 ? '#6f6b64' : '#9a958c';
+        ctx.fillStyle = pat(ctx, 'wetConcrete');
         ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
-        if (age >= 0.6) {                                 // screeded sheen
-          ctx.fillStyle = 'rgba(255,255,255,.10)';
+        if (age < 0.7) {                            // fresh dump: darker, lumpy
+          ctx.fillStyle = 'rgba(0,0,0,.22)';
+          ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
+        } else {                                    // screeded sheen
+          ctx.fillStyle = 'rgba(255,255,255,.09)';
           ctx.fillRect(cr.x, cr.y + cr.h * ((tt * 0.4 + i * 0.13) % 1) * 0.8, cr.w, 3);
         }
       }
       drawSlabOutline(ctx, R);
       // mixer + chute aimed at first unfilled cell
-      drawMixer(ctx, 118, R.y + 26, 120, tt);
+      drawMixer(ctx, 150, R.y - 44, 130, tt, 0.12);
       const target = filled.indexOf(false);
       if (target >= 0 && !finished) {
         const cr = cellRect(target);
-        ctx.strokeStyle = '#c9c9c2'; ctx.lineWidth = 9;
-        ctx.beginPath(); ctx.moveTo(178, R.y + 16);
-        ctx.quadraticCurveTo((178 + cr.x) / 2, R.y - 46, cr.x + cr.w / 2, cr.y + 6);
+        ctx.strokeStyle = '#b5b1a8'; ctx.lineWidth = 9;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(190, R.y - 30);
+        ctx.quadraticCurveTo((190 + cr.x) / 2, R.y - 60, cr.x + cr.w / 2, cr.y + 6);
         ctx.stroke();
-        ctx.fillStyle = '#6f6b64';                        // mud stream
-        ctx.beginPath(); ctx.arc(cr.x + cr.w / 2, cr.y + 10, 5 + Math.sin(tt * 12) * 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.lineCap = 'butt';
+        ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(190, R.y - 30);
+        ctx.quadraticCurveTo((190 + cr.x) / 2, R.y - 60, cr.x + cr.w / 2, cr.y + 6);
+        ctx.stroke();
+        ctx.fillStyle = '#6f6b64';                  // mud stream
+        ctx.beginPath(); ctx.arc(cr.x + cr.w / 2, cr.y + 10, 5 + Math.sin(tt * 12) * 1.5, 0, 7); ctx.fill();
       }
       // crew screeding along the pour front
       const frontRow = Math.min(rowsN - 1, Math.floor(placed / cols));
       const fy = R.y + (frontRow + 0.5) * R.h / rowsN;
       (G.crew || []).forEach((c, k) =>
-        drawWorker(ctx, R.x + R.w + 34, fy - 20 + k * 40, 34, tt, 'screed', c.skin));
-      drawWorker(ctx, R.x - 36, fy - 8, 38, tt, 'screed');
+        drawWorker(ctx, R.x + R.w + 36, fy - 20 + k * 42, 34, tt, 'screed', c.skin));
+      // the foreman
+      const arrived = updatePlayer(player);
+      if (arrived && player.pending !== null && !finished) {
+        player.pose = 'screed';
+        place(player.pending);
+        player.pending = null;
+      } else if (!arrived) player.pose = 'idle';
+      drawPlayer(ctx, player, tt);
       drawDust(ctx, state);
+      drawRain(ctx, state.rain);
+      siteGrade(ctx);
     };
   }
 
@@ -326,12 +373,22 @@ function startPourGame(job, order, done) {
     const frac = placed / total;
     let score = Math.round(70 * frac + 30 * clamp(1 - over / truckTime, 0, 1));
     if (frac >= 1 && over === 0) score = Math.max(score, 90 + Math.round(10 * clamp(t / truckTime, 0, 1)));
-    done({ score: clamp(score, 5, 100), demurrage, overtime: Math.round(over), shorted: frac < 1 });
+    let rainPenalty = 0;
+    if (state.rain) rainPenalty = clamp(Math.round(unfilledAtRain * 0.6), 0, 15);
+    score -= rainPenalty;
+    done({ score: clamp(score, 5, 100), demurrage, overtime: Math.round(over), shorted: frac < 1,
+           rainHit: !!state.rain, rainPenalty });
   }
 
   render();
   timer = setInterval(() => {
     clock += 1;
+    if (rainAt > 0 && clock === rainAt && !finished) {
+      state.rain = makeRain(SITE.W, SITE.H);
+      unfilledAtRain = total - placed;
+      const wx = document.getElementById('pour-wx');
+      if (wx) wx.innerHTML = '<b class="bad">🌧️ RAIN ROLLING IN — get it placed and covered!</b>';
+    }
     if (t > 0) {
       t--;
       const el = document.getElementById('pour-time');
@@ -436,29 +493,33 @@ function startFinishGame(job, order, weather, done) {
 
   const bleed = [0.15, 0.45];
   let steps = interior && hasTrowel ? [
-    { id:'bull',  label:'🛶 Bull Float',          win:[0.00, 0.20] },
-    { id:'edge',  label:'📐 Run the Edger',        win:[0.48, 0.72] },
-    { id:'pan',   label:'🚁 Trowel — Float Pass',  win:[0.50, 0.68] },
-    { id:'burn',  label:'🚁 Trowel — Finish Pass', win:[0.74, 0.94] },
+    { id:'bull',  label:'🛶 Bull Float',          win:[0.00, 0.20], pose:'float' },
+    { id:'edge',  label:'📐 Run the Edger',        win:[0.48, 0.72], pose:'float' },
+    { id:'pan',   label:'Power Trowel — Float Pass',  win:[0.50, 0.68], pose:'float' },
+    { id:'burn',  label:'Power Trowel — Finish Pass', win:[0.74, 0.94], pose:'float' },
   ] : [
-    { id:'bull',  label:'🛶 Bull Float',          win:[0.00, 0.20] },
-    { id:'edge',  label:'📐 Run the Edger',        win:[0.48, 0.75] },
-    { id:'broom', label:'🧹 Broom Finish',         win:[0.60, 0.88] },
+    { id:'bull',  label:'🛶 Bull Float',          win:[0.00, 0.20], pose:'float' },
+    { id:'edge',  label:'📐 Run the Edger',        win:[0.48, 0.75], pose:'float' },
+    { id:'broom', label:'🧹 Broom Finish',         win:[0.60, 0.88], pose:'broom' },
   ];
   if (interior && !hasTrowel) {
-    steps.push({ id:'hand', label:'😩 Hand-Mag the Whole Floor', win:[0.55, 0.9], penalty: true });
+    steps.push({ id:'hand', label:'😩 Hand-Mag the Whole Floor', win:[0.55, 0.9], penalty: true, pose:'float' });
   }
   const handJoints = !owns('saw');
-  if (handJoints) steps.splice(2, 0, { id:'joints', label:'✂️ Tool Control Joints', win:[0.46, 0.78], opens:'joints' });
+  if (handJoints) steps.splice(2, 0, { id:'joints', label:'✂️ Tool Control Joints', win:[0.46, 0.78], opens:'joints', pose:'float' });
 
   const results = {}; let bleedFouls = 0;
   let t = 0, paused = false, timer = null, jointsResult = null;
   const R = slabRect(job);
   const state = { dust: [] };
+  const player = makePlayer(R.x - 70, R.y + R.h + 46);
+  let actUntil = 0;
   // the dog event — exterior pours only, and only if there's time to react
   const dog = (!interior && Math.random() < 0.45 && dur > 32)
     ? { at: 0.3 + Math.random() * 0.35, active: false, resolved: false, x: -40, pawprints: false }
     : null;
+  // the inspector shows up on story jobs once you're past the tutorial
+  const inspector = job.story && job.chapter >= 2 ? { at: 0.5, here: false } : null;
 
   function markerSpans() {
     return steps.map(s => `<div class="tl-win" style="left:${s.win[0]*100}%;width:${(s.win[1]-s.win[0])*100}%"></div>`).join('') +
@@ -469,7 +530,7 @@ function startFinishGame(job, order, weather, done) {
     app.innerHTML = `
       <div class="panel">
         <h2>🪄 Finishing — ${esc(job.name)}</h2>
-        <p class="muted">${weather.temp}°F${order.nca ? `, ${order.nca}% NCA in the mix` : ''} — the slab sets ${dur < 40 ? '<b class="bad">FAST</b>' : dur > 60 ? 'slow (long day)' : 'at a normal clip'}. Hit each task inside its window. <b>Don’t finish during bleed water</b> (the 💧 sheen) — bull floating is the only safe move then.${crewHas('finisher') ? ' 👷 Old Pro on the crew: wider windows.' : ''}</p>
+        <p class="muted">${weather.temp}°F${order.nca ? `, ${order.nca}% NCA in the mix` : ''} — the slab sets ${dur < 40 ? '<b class="bad">FAST</b>' : dur > 60 ? 'slow (long day)' : 'at a normal clip'}. Hit each task inside its window. <b>Don’t finish during bleed water</b> (the 💧 sheen) — bull floating is the only safe move then.${crewHas('finisher') ? ' Old Pro on the crew: wider windows.' : ''}</p>
         <div id="site" class="site-wrap"></div>
         <div class="timeline"><div class="tl-track">${markerSpans()}<div class="tl-cursor" id="tl-cursor"></div></div>
           <div class="tl-labels"><span>wet</span><span id="bleed-flag"></span><span>set hard</span></div>
@@ -492,16 +553,17 @@ function startFinishGame(job, order, weather, done) {
     Stage.draw = (ctx, tt) => {
       drawSiteBase(ctx, tt, job);
       const p = clamp(t / dur, 0, 1);
-      // slab surface: darkens as it sets
-      const grey = Math.round(122 + p * 40);
-      ctx.fillStyle = `rgb(${grey},${grey - 4},${grey - 10})`;
+      // slab surface: cures lighter as it sets
+      ctx.fillStyle = pat(ctx, 'wetConcrete');
+      ctx.fillRect(R.x, R.y, R.w, R.h);
+      ctx.fillStyle = `rgba(214,210,200,${p * 0.5})`;
       ctx.fillRect(R.x, R.y, R.w, R.h);
       // bleed water sheen
       if (p > bleed[0] && p < bleed[1]) {
         const sh = ctx.createLinearGradient(R.x, R.y, R.x + R.w, R.y + R.h);
         const c = 0.5 + Math.sin(tt * 2) * 0.15;
         sh.addColorStop(0, 'rgba(255,255,255,0)');
-        sh.addColorStop(c, 'rgba(220,235,255,.28)');
+        sh.addColorStop(c, 'rgba(225,238,255,.30)');
         sh.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = sh; ctx.fillRect(R.x, R.y, R.w, R.h);
       }
@@ -511,7 +573,7 @@ function startFinishGame(job, order, weather, done) {
         ctx.strokeRect(R.x + 6, R.y + 6, R.w - 12, R.h - 12);
       }
       if (jointsResult) {
-        ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(0,0,0,.32)'; ctx.lineWidth = 2;
         (jointsResult.vCuts || []).forEach(f => {
           const x = R.x + f / job.len * R.w;
           ctx.beginPath(); ctx.moveTo(x, R.y); ctx.lineTo(x, R.y + R.h); ctx.stroke();
@@ -528,39 +590,60 @@ function startFinishGame(job, order, weather, done) {
         }
       }
       if (results.pan !== undefined || results.burn !== undefined) {
-        ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255,255,255,.13)'; ctx.lineWidth = 2;
         for (let k = 0; k < 5; k++) {
           ctx.beginPath();
-          ctx.arc(R.x + (k * 89 % 97) / 97 * R.w, R.y + (k * 53 % 89) / 89 * R.h, 16, 0, Math.PI * 2);
+          ctx.arc(R.x + (k * 89 % 97) / 97 * R.w, R.y + (k * 53 % 89) / 89 * R.h, 16, 0, 7);
           ctx.stroke();
         }
       }
       drawSlabOutline(ctx, R);
-      // crew on the edges, working when an action just fired
-      (G.crew || []).forEach((c, k) =>
-        drawWorker(ctx, R.x - 40, R.y + 20 + k * 52, 34, tt, 'float', c.skin));
-      drawWorker(ctx, R.x + R.w + 38, R.y + R.h / 2, 38, tt,
-        results.broom === undefined ? 'float' : 'broom');
-      if (interior && hasTrowel && p > 0.45) {                 // power trowel on deck
-        ctx.font = '30px sans-serif';
-        ctx.fillText('🚁', R.x + R.w / 2 + Math.sin(tt) * R.w * 0.3 - 15, R.y + R.h / 2);
+      // power trowel machine parked and ready
+      if (interior && hasTrowel) {
+        const mx = R.x + R.w + 60, my = R.y + R.h - 20;
+        castShadow(ctx, () => { ctx.beginPath(); ctx.arc(mx, my, 20, 0, 7); }, 0.25);
+        ctx.strokeStyle = '#9aa0a6'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(mx, my, 19, 0, 7); ctx.stroke();
+        ctx.save(); ctx.translate(mx, my);
+        ctx.rotate((results.pan !== undefined || results.burn !== undefined) ? tt * 6 : 0.6);
+        ctx.fillStyle = '#c8ccd0';
+        for (let k = 0; k < 4; k++) { ctx.rotate(Math.PI / 2); ctx.fillRect(3, -2.5, 14, 5); }
+        ctx.restore();
+        ctx.strokeStyle = '#666'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(mx + 14, my - 14); ctx.lineTo(mx + 34, my - 34); ctx.stroke();
       }
+      // crew working the edges
+      (G.crew || []).forEach((c, k) =>
+        drawWorker(ctx, R.x - 44, R.y + 16 + k * 48, 34, tt, 'float', c.skin));
+      // the inspector, arms crossed, writing things down
+      if (inspector && inspector.here) drawInspector(ctx, R.x + R.w + 44, R.y + 8, 30, tt);
+      // the foreman
+      updatePlayer(player);
+      if (t * 10 < actUntil * 10 && player.pendingPose) player.pose = player.pendingPose;
+      else if (!player.moving) player.pose = 'idle';
+      drawPlayer(ctx, player, tt);
       // THE DOG
       if (dog && dog.active && !dog.resolved) {
         dog.x += 3.4;
-        ctx.font = '30px sans-serif';
-        ctx.fillText('🐕', dog.x, R.y + R.h / 2);
-        if (dog.x > R.x + R.w / 2) {                           // he made it to the mud
+        drawDog(ctx, dog.x, R.y + R.h / 2, 34, tt);
+        if (dog.x > R.x + R.w / 2) {
           dog.resolved = true; dog.pawprints = true;
           const b = document.getElementById('act-dog'); if (b) b.remove();
           log('🐾 The dog got in the slab! Pawprints across your finish. The customer thinks it’s adorable. It is NOT adorable.', 'bad');
         }
       }
       if (dog && dog.pawprints) {
-        ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.font = '13px sans-serif';
-        for (let k = 0; k < 7; k++) ctx.fillText('🐾', R.x + 20 + k * (R.w - 40) / 7, R.y + R.h * 0.45 + (k % 2) * 14);
+        ctx.fillStyle = 'rgba(30,25,20,.4)';
+        for (let k = 0; k < 8; k++) {
+          const px = R.x + 24 + k * (R.w - 48) / 8, py = R.y + R.h * 0.45 + (k % 2) * 12;
+          ctx.beginPath(); ctx.ellipse(px, py, 4, 5, 0.2, 0, 7); ctx.fill();
+          for (let d2 = 0; d2 < 3; d2++) {
+            ctx.beginPath(); ctx.arc(px - 3 + d2 * 3, py - 6, 1.6, 0, 7); ctx.fill();
+          }
+        }
       }
       drawDust(ctx, state);
+      siteGrade(ctx);
     };
   }
 
@@ -580,6 +663,11 @@ function startFinishGame(job, order, weather, done) {
     if (results[s.id] !== undefined || paused) return;
     const p = t / dur;
     const inBleed = p > bleed[0] && p < bleed[1] && s.id !== 'bull';
+    // send the foreman onto the slab
+    player.tx = R.x + R.w * (0.3 + Math.random() * 0.4);
+    player.ty = R.y + R.h * (0.3 + Math.random() * 0.4);
+    player.pendingPose = s.pose || 'float';
+    actUntil = t + 3;
     if (s.opens === 'joints') {
       paused = true;
       startJointsGame(job, false, jr => {
@@ -620,6 +708,10 @@ function startFinishGame(job, order, weather, done) {
     if (cur) cur.style.left = (p * 100) + '%';
     const bf = document.getElementById('bleed-flag');
     if (bf) bf.innerHTML = (p > bleed[0] && p < bleed[1]) ? '💧 bleed water on the surface!' : '';
+    if (inspector && !inspector.here && p >= inspector.at) {
+      inspector.here = true;
+      log('📋 A city truck pulls up. The inspector steps out with a clipboard and no sense of humor.', 'warn');
+    }
     if (dog && !dog.active && !dog.resolved && p >= dog.at) {
       dog.active = true; dog.x = -30;
       const row = document.getElementById('finish-actions');
@@ -649,6 +741,7 @@ function startFinishGame(job, order, weather, done) {
     if (dog && dog.pawprints) score = Math.max(5, score - 12);
     done({ score: clamp(score, 5, 100), missed, bleedFouls, jointsResult,
            dogPrints: !!(dog && dog.pawprints),
+           inspectorCame: !!(inspector && inspector.here),
            handFinishedInterior: interior && !hasTrowel });
   }
 

@@ -81,7 +81,7 @@ await exec(`const m=document.querySelector('#modal-ok'); if(m)m.click();`);
 await exec(`const b=document.getElementById('bid-amt'); if(b)b.value='8200';`);
 await shot('05-bid');
 
-// 6. demo on the job site, mid-teardown
+// 6. demo on the job site, mid-teardown, foreman walking in to work
 await exec(`
   G.currentJob = Object.assign(${job}, {bid: 8200, costs:{labor:0,materials:0,fees:0}, scores:{}, flags:{}});
   startDemoGame(G.currentJob, ()=>{});
@@ -89,7 +89,8 @@ await exec(`
 await pause(400);
 await exec(`for (let i = 0; i < 22; i++) window.__demoHit(i);
             for (let i = 0; i < 12; i++) window.__demoHit(i);`);
-await pause(500);
+await exec(`const R = slabRect(G.currentJob); Stage.onClick(R.x + R.w*0.62, R.y + R.h*0.55);`);
+await pause(2200);   // let him walk over and start swinging
 await shot('06-demo');
 
 // 7. forms & flow lines
@@ -111,16 +112,28 @@ await exec(`
 await pause(300);
 await shot('08-order');
 
-// 9. pour day: mixer, chute, wet mud going in
+// 9. pour day: mixer, chute, wet mud — and rig the RNG so rain rolls in
 await exec(`
+  window.__oR = Math.random; Math.random = () => 0.2;   // forces the squall
   G.currentJob.order = {yards:14, bags:7, air:6, slump:4, fiber:1, chert:1, nca:0,
     exactYards: 13.33, specString:'7 bag, low chert, air, microfiber, 4″ slump'};
   startPourGame(G.currentJob, G.currentJob.order, ()=>{});
+  Math.random = window.__oR;
 `);
 await pause(600);
 await exec(`for (let k = 0; k < 6; k++) window.__pourCell(0);`);
-await pause(1200);
+await exec(`const R = slabRect(G.currentJob); Stage.onClick(R.x + R.w*0.5, R.y + R.h*0.6);`);
+await pause(1500);
 await shot('09-pour');
+// wait for the rain to arrive, keep pouring meanwhile
+for (let i = 0; i < 100; i++) {
+  await pause(1000);
+  const raining = await exec(`return !!document.querySelector('#pour-wx b');`);
+  if (raining) break;
+}
+await exec(`for (let k = 0; k < 3; k++) window.__pourCell(0);`);
+await pause(1200);
+await shot('09b-pour-rain');
 
 // 10. finishing on-site — rig the RNG so the dog shows up
 await exec(`
@@ -139,6 +152,16 @@ for (let i = 0; i < 120; i++) {
 }
 await pause(900);   // let him get onto the canvas
 await shot('10-finish-dog');
+
+// wait for the inspector (story job, arrives at ~50% set)
+for (let i = 0; i < 80; i++) {
+  await pause(500);
+  const insp = await exec(`const s = window.__finishState && window.__finishState(); return s && s.p > 0.56;`);
+  if (insp) break;
+}
+await exec(`document.getElementById('act-edge')?.click();`);
+await pause(700);
+await shot('10b-inspector');
 
 // 11. control joints with some cuts made
 await exec(`startJointsGame(G.currentJob, true, ()=>{});`);

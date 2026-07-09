@@ -15,8 +15,10 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const money = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const owns = id => !!(G && G.equipment[id]);
-const crewHas = trait => !!(G && (G.crew || []).some(c => c.trait === trait));
+// low-morale crew show up late and dog it — trait shuts off under 40
+const crewHas = trait => !!(G && (G.crew || []).some(c => c.trait === trait && (c.morale ?? 80) >= 40));
 const crewWages = () => (G && G.crew || []).reduce((a, c) => a + c.wage, 0);
+const crewLevel = xp => xp >= 8 ? 3 : xp >= 3 ? 2 : 1;
 
 const OVERHEAD_PER_DAY = 45;   // truck payment, insurance, phone, coffee
 
@@ -35,6 +37,7 @@ function load() {
     if (!s) return null;
     const g = JSON.parse(s);
     g.crew = g.crew || []; g.applicants = g.applicants || [];   // migrate older saves
+    g.crew.forEach(c => { c.xp = c.xp ?? 0; c.morale = c.morale ?? 80; c.level = c.level ?? 1; });
     return g;
   } catch (e) { return null; }
 }
@@ -158,6 +161,7 @@ function showHub(tab) {
     for (let i = 0; i < n; i++) G.leads.push(genLead());
     G.leads = G.leads.slice(-5);
     if (G.applicants.length < 3 && Math.random() < 0.7) G.applicants.push(genApplicant());
+    G.crew.forEach(c => c.morale = clamp(c.morale + 4, 20, 100));   // a slow day is a good day
     save(); showHub(tab);
   };
 
@@ -268,6 +272,7 @@ function genApplicant() {
     skin: pick(WORKER_SKINS),
     trait: trait.id, wage,
     bio: pick(CREW_BIOS),
+    xp: 0, level: 1, morale: 80,
   };
 }
 
@@ -289,11 +294,14 @@ function renderCrewTab(el) {
   const cl = el.querySelector('#crew-list');
   G.crew.forEach(c => {
     const t = traitOf(c.trait);
+    const lvl = crewLevel(c.xp ?? 0);
+    const m = c.morale ?? 80;
     const card = document.createElement('div');
     card.className = 'card crew-card';
-    card.innerHTML = `<h4><span class="crew-face">${c.face}</span> ${esc(c.name)} <span class="price">${money(c.wage)}/job</span></h4>
-      <p class="small">${t.icon} <b>${t.name}</b> — ${esc(t.desc)}</p>
-      <p class="small muted">${esc(c.bio)}</p>
+    card.innerHTML = `<h4><span class="crew-face">${c.face}</span> ${esc(c.name)} <span class="lvl">${'⭐'.repeat(lvl)}</span> <span class="price">${money(c.wage)}/job</span></h4>
+      <p class="small">${t.icon} <b>${t.name}</b> — ${esc(t.desc)}${m < 40 ? ' <span class="bad">(morale too low — not performing!)</span>' : ''}</p>
+      <div class="morale"><div class="morale-fill ${m >= 60 ? 'hi' : m >= 40 ? 'mid' : 'lo'}" style="width:${m}%"></div></div>
+      <p class="small muted">Morale ${m}/100 · ${c.xp ?? 0} jobs poured · ${esc(c.bio)}</p>
       <button class="btn">🪪 Let Go</button>`;
     card.querySelector('button').onclick = () => {
       G.crew = G.crew.filter(x => x.id !== c.id); save(); showHub('crew');
@@ -550,7 +558,9 @@ function phasePour() {
     job.scores.pour = res.score;
     job.costs.fees += res.demurrage;
     job.flags.coldJoint = res.shorted || job.order.shorted;
-    modal(`<h3>🚛 Truck’s washed out</h3><p>${res.shorted ? '<span class="bad">You didn’t get it all placed in time — part of the slab got dumped and raked in rough. It’ll show.</span>' : 'Mud’s down and screeded off.'} ${res.demurrage ? `Demurrage: <b>${money(res.demurrage)}</b> (${res.overtime}s over).` : 'Zero demurrage — Rhonda’s driver tips his cap.'}</p>`,
+    job.flags.rainHit = res.rainHit;
+    modal(`<h3>🚛 Truck’s washed out</h3><p>${res.shorted ? '<span class="bad">You didn’t get it all placed in time — part of the slab got dumped and raked in rough. It’ll show.</span>' : 'Mud’s down and screeded off.'} ${res.demurrage ? `Demurrage: <b>${money(res.demurrage)}</b> (${res.overtime}s over).` : 'Zero demurrage — Rhonda’s driver tips his cap.'}
+      ${res.rainHit ? '<br><span class="warn">🌧️ That squall caught you mid-pour. What was still open took surface damage — the finish will tell the tale.</span>' : ''}</p>`,
       phaseFinish);
   }));
 }
@@ -563,6 +573,7 @@ function phaseFinish() {
     job.flags.bleedFouls = res.bleedFouls;
     job.flags.missed = res.missed;
     job.flags.dogPrints = res.dogPrints;
+    job.flags.inspectorCame = res.inspectorCame;
     job.flags.handFinishedInterior = res.handFinishedInterior;
     if (res.jointsResult) { job.scores.joints = res.jointsResult.score; job.flags.jointInfo = res.jointsResult; finishResults(); }
     else if (owns('saw')) {
@@ -630,6 +641,19 @@ function finishResults() {
   if (job.flags.coldJoint) quality -= 4;
   quality = clamp(quality, 5, 100);
 
+  if (job.flags.rainHit) quality -= 3;
+
+  // the inspector's report (story jobs, chapter 2+)
+  let inspection = null;
+  if (job.flags.inspectorCame) {
+    const o = job.order, interior = !!JOB_TYPES[job.type].interior;
+    const issues = [];
+    if (!interior && o.air < 6) issues.push('exterior mix not air-entrained');
+    if (job.flags.noJoints || (job.flags.jointInfo && job.flags.jointInfo.bad)) issues.push('control joint spacing out of spec');
+    if (o.shorted) issues.push('visible cold joint');
+    inspection = { pass: issues.length === 0, issues };
+  }
+
   const fuel = 60 + (job.demo ? 40 : 0);
   job.costs.fees += fuel;
   const wages = crewWages();
@@ -639,9 +663,26 @@ function finishResults() {
   if (quality < 55) callback = Math.round(job.bid * 0.12);
   const net = job.bid - costs - callback;
   G.cash += net;
-  const repDelta = clamp(Math.round((quality - 58) / 4) + (job.story ? 3 : 0), -8, 14);
+  let repDelta = clamp(Math.round((quality - 58) / 4) + (job.story ? 3 : 0), -8, 14);
+  if (inspection) repDelta += inspection.pass ? 3 : -5;
   G.rep = clamp(G.rep + repDelta, 0, 100);
   G.jobsDone++; advanceDays(1);
+
+  // crew: experience, raises, morale
+  const crewNotes = [];
+  G.crew.forEach(c => {
+    const before = crewLevel(c.xp ?? 0);
+    c.xp = (c.xp ?? 0) + 1;
+    const after = crewLevel(c.xp);
+    if (after > before) {
+      c.level = after;
+      c.wage = Math.round(c.wage * 1.15);
+      crewNotes.push(['ok', `${c.name} leveled up to ${'⭐'.repeat(after)} — and negotiated a raise to ${money(c.wage)}/job. Worth it.`]);
+    }
+    const dm = quality >= 85 ? 8 : quality < 55 ? -15 : 2;
+    c.morale = clamp((c.morale ?? 80) + dm + (net < 0 ? -8 : 0), 20, 100);
+    if (c.morale < 40) crewNotes.push(['bad', `${c.name}'s morale is shot (${c.morale}/100) — they're coasting. Win a good one or give the crew a slow day.`]);
+  });
 
   const tier = REVIEWS.find(r => quality >= r.min);
   const review = pick(tier.texts);
@@ -685,8 +726,15 @@ function finishResults() {
           <p class="small">Reputation ${repDelta >= 0 ? '+' : ''}${repDelta} ⭐</p>
         </div>
       </div>
+      ${inspection ? `<div class="card ${inspection.pass ? '' : 'insp-fail'}"><h4>📋 Inspector’s Report</h4>
+        ${inspection.pass
+          ? '<p class="small ok">• "Everything to spec. Don’t let it go to your head." He initials the card and leaves without another word. <b>+3 rep</b></p>'
+          : inspection.issues.map(i => `<p class="small bad">• Flagged: ${esc(i)}.</p>`).join('') + '<p class="small bad"><b>-5 rep</b> — word travels fast at the county office.</p>'}
+      </div>` : ''}
       <div class="card"><h4>🧓 Dale’s post-pour debrief</h4>
         ${mix.notes.map(([cls, n]) => `<p class="small ${cls}">• ${esc(n)}</p>`).join('')}
+        ${job.flags.rainHit ? '<p class="small warn">• A squall rolled through mid-pour — some surface paste washed. Broom hid most of it.</p>' : ''}
+        ${crewNotes.map(([cls, n]) => `<p class="small ${cls}">• ${esc(n)}</p>`).join('')}
         ${job.flags.birdbath ? '<p class="small bad">• Bird bath in the flow line — first rain proved it. Customer noticed.</p>' : ''}
         ${job.flags.missed && job.flags.missed.length ? `<p class="small bad">• Skipped finishing steps: ${job.flags.missed.join(', ')}.</p>` : ''}
         ${job.flags.bleedFouls ? '<p class="small bad">• Finished through bleed water — surface will dust.</p>' : ''}
